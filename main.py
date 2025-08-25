@@ -1,11 +1,12 @@
 import os
 import requests
 from datetime import datetime, timedelta
-import telegram
-from telegram.ext import Updater, CommandHandler, CallbackContext
+
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # --- CONFIGURAZIONE ---
-# Inserisci qui i tuoi token
+# Carica i token dalle variabili d'ambiente del server (impostate su Railway)
 TELEGRAM_TOKEN = ' 8448591154:AAEJorp4NLnox6coY3zaB9iRu5p0h2jTLss'
 FOOTBALL_DATA_TOKEN = '437bdfc679224878ad25e2d8cff723a0'
 
@@ -28,9 +29,9 @@ def fetch_data(endpoint):
         print(f"Errore API: {e}")
         return None
 
-# --- COMANDI DEL BOT ---
+# --- COMANDI DEL BOT (versione async) ---
 
-def start(update: telegram.Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Messaggio di benvenuto e lista comandi."""
     user = update.effective_user
     welcome_message = (
@@ -41,15 +42,15 @@ def start(update: telegram.Update, context: CallbackContext):
         "⚽️ /marcatori - La classifica dei migliori marcatori.\n"
         "🗓 /calendario - Le prossime 5 partite in programma."
     )
-    update.message.reply_text(welcome_message)
+    await update.message.reply_text(welcome_message)
 
-def live(update: telegram.Update, context: CallbackContext):
+async def live(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mostra i risultati delle partite in corso."""
-    update.message.reply_text("⏳ Sto cercando le partite in corso...")
+    await update.message.reply_text("⏳ Sto cercando le partite in corso...")
     data = fetch_data(f"competitions/{SERIE_A_ID}/matches?status=LIVE")
 
     if not data or not data.get('matches'):
-        update.message.reply_text("Nessuna partita della Serie A è in corso in questo momento.")
+        await update.message.reply_text("Nessuna partita della Serie A è in corso in questo momento.")
         return
 
     message = "🔴 **Partite in corso** 🔴\n\n"
@@ -58,19 +59,18 @@ def live(update: telegram.Update, context: CallbackContext):
         away_team = match['awayTeam']['shortName']
         score_home = match['score']['fullTime']['home']
         score_away = match['score']['fullTime']['away']
-        minute = match.get('minute', 'N/D') # Potrebbe non essere sempre presente
 
         message += f"▪️ {home_team} **{score_home} - {score_away}** {away_team}\n"
 
-    update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message, parse_mode='Markdown')
 
-def classifica(update: telegram.Update, context: CallbackContext):
+async def classifica(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mostra la classifica della Serie A."""
-    update.message.reply_text("📊 Sto caricando la classifica...")
+    await update.message.reply_text("📊 Sto caricando la classifica...")
     data = fetch_data(f"competitions/{SERIE_A_ID}/standings")
 
     if not data or not data['standings']:
-        update.message.reply_text("Impossibile recuperare la classifica al momento.")
+        await update.message.reply_text("Impossibile recuperare la classifica al momento.")
         return
 
     table = data['standings'][0]['table']
@@ -83,15 +83,15 @@ def classifica(update: telegram.Update, context: CallbackContext):
         played = str(team['playedGames']).rjust(3)
         message += f"`{pos}. {name} {points} {played}`\n"
 
-    update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message, parse_mode='Markdown')
 
-def marcatori(update: telegram.Update, context: CallbackContext):
+async def marcatori(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mostra la classifica marcatori."""
-    update.message.reply_text("⚽️ Sto caricando la classifica marcatori...")
+    await update.message.reply_text("⚽️ Sto caricando la classifica marcatori...")
     data = fetch_data(f"competitions/{SERIE_A_ID}/scorers")
 
     if not data or not data.get('scorers'):
-        update.message.reply_text("Impossibile recuperare la classifica marcatori.")
+        await update.message.reply_text("Impossibile recuperare la classifica marcatori.")
         return
 
     message = "🥅 **Classifica Marcatori Serie A** 🥅\n\n"
@@ -101,15 +101,15 @@ def marcatori(update: telegram.Update, context: CallbackContext):
         goals = scorer['goals']
         message += f"*{i}.* {name} (*{team}*) - *{goals}* gol\n"
 
-    update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message, parse_mode='Markdown')
 
-def calendario(update: telegram.Update, context: CallbackContext):
+async def calendario(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mostra le prossime partite in calendario."""
-    update.message.reply_text("🗓 Sto cercando le prossime partite...")
+    await update.message.reply_text("🗓 Sto cercando le prossime partite...")
     data = fetch_data(f"competitions/{SERIE_A_ID}/matches?status=SCHEDULED")
 
     if not data or not data.get('matches'):
-        update.message.reply_text("Non ho trovato prossime partite in programma.")
+        await update.message.reply_text("Non ho trovato prossime partite in programma.")
         return
 
     message = "📅 **Prossime Partite in Calendario** 📅\n\n"
@@ -117,39 +117,37 @@ def calendario(update: telegram.Update, context: CallbackContext):
         home_team = match['homeTeam']['shortName']
         away_team = match['awayTeam']['shortName']
         
-        # Converte la data UTC in formato italiano (orario di Roma)
+        # Converte la data UTC in formato italiano (orario di Roma, CEST)
         match_date_utc = datetime.fromisoformat(match['utcDate'].replace('Z', '+00:00'))
         match_date_local = match_date_utc + timedelta(hours=2) # Da UTC a CEST
         date_str = match_date_local.strftime("%d/%m/%Y ore %H:%M")
 
         message += f"▪️ *{date_str}*\n   {home_team} vs {away_team}\n\n"
     
-    update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message, parse_mode='Markdown')
 
-
-def main():
+def main() -> None:
     """Funzione principale per avviare il bot."""
-    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == 'IL_TUO_TOKEN_TELEGRAM':
-        print("Errore: Il token di Telegram non è stato impostato.")
+    if not TELEGRAM_TOKEN:
+        print("Errore: la variabile d'ambiente TELEGRAM_TOKEN non è stata impostata.")
         return
-    if not FOOTBALL_DATA_TOKEN or FOOTBALL_DATA_TOKEN == 'LA_TUA_API_KEY_FOOTBALL_DATA':
-        print("Errore: La API key di football-data.org non è stata impostata.")
+    if not FOOTBALL_DATA_TOKEN:
+        print("Errore: la variabile d'ambiente FOOTBALL_DATA_TOKEN non è stata impostata.")
         return
         
-    updater = Updater(TELEGRAM_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
+    # Crea l'applicazione usando il nuovo Application.builder()
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Registrazione dei comandi
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("live", live))
-    dispatcher.add_handler(CommandHandler("classifica", classifica))
-    dispatcher.add_handler(CommandHandler("marcatori", marcatori))
-    dispatcher.add_handler(CommandHandler("calendario", calendario))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("live", live))
+    application.add_handler(CommandHandler("classifica", classifica))
+    application.add_handler(CommandHandler("marcatori", marcatori))
+    application.add_handler(CommandHandler("calendario", calendario))
 
-    # Avvio del bot
-    updater.start_polling()
+    # Avvio del bot in modalità polling
     print("Bot avviato e in ascolto...")
-    updater.idle()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
